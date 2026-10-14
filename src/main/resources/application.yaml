@@ -1,3 +1,9 @@
 spring:
   application:
     name: sb-ecomm
+  h2:
+    console:
+      enabled: true
+  datasource:
+    dbcp2:
+      url: jdbc:h2:mem:46ae32a1-dfa2-4cb1-8d47-f7502cab50b1
