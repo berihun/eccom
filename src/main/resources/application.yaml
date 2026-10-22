@@ -7,3 +7,12 @@ spring:
   datasource:
     dbcp2:
       url: jdbc:h2:mem:46ae32a1-dfa2-4cb1-8d47-f7502cab50b1
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        hbm2ddl:
+          auto: update
+project:
+  images: images/
