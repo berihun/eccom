@@ -1,5 +1,8 @@
 package com.ecommerce.sb_ecomm.service;
 
+import com.ecommerce.sb_ecomm.model.Cart;
+import com.ecommerce.sb_ecomm.payload.CartDTO;
+import com.ecommerce.sb_ecomm.repository.CartRepository;
 import com.ecommerce.sb_ecomm.repository.CategoryRepository;
 import com.ecommerce.sb_ecomm.repository.ProductRepository;
 import com.ecommerce.sb_ecomm.exception.APIException;
@@ -29,16 +32,20 @@ public class ProductServiceImpl implements ProductService {
 
     private final ModelMapper modelMapper;
     private final FileService fileService;
+    private final CartRepository cartRepository;
+    private final CartService cartService;
 
     @Value("${project.images}")
     private String path;
 
 
-    public ProductServiceImpl(ProductRepository productRepository, CategoryRepository categoryRepository, ModelMapper modelMapper, FileService fileService) {
+    public ProductServiceImpl(ProductRepository productRepository, CategoryRepository categoryRepository, ModelMapper modelMapper, FileService fileService, CartRepository cartRepository, CartService cartService) {
         this.productRepository = productRepository;
         this.categoryRepository = categoryRepository;
         this.modelMapper = modelMapper;
         this.fileService = fileService;
+        this.cartRepository = cartRepository;
+        this.cartService = cartService;
     }
 
 
@@ -106,7 +113,7 @@ public class ProductServiceImpl implements ProductService {
         Pageable pageable = PageRequest.of(pageNumber - 1, pageSize, sortByAndOrder);
         //check if the product size is 0
 
-        Page<Product> products = productRepository.findByCategoryOrderByPriceAsc(category,pageable);
+        Page<Product> products = productRepository.findByCategoryOrderByPriceAsc(category, pageable);
         if (products.isEmpty())
             throw new APIException("Product not found!!!");
         List<ProductDTO> productDTOS = products.stream()
@@ -132,7 +139,7 @@ public class ProductServiceImpl implements ProductService {
                 : Sort.by(sortBy).descending();
 
         Pageable pageable = PageRequest.of(pageNumber - 1, pageSize, sortByAndOrder);
-        Page<Product> products = productRepository.findProductByProductNameLikeIgnoreCase('%' + keyword + '%',pageable);
+        Page<Product> products = productRepository.findProductByProductNameLikeIgnoreCase('%' + keyword + '%', pageable);
         List<ProductDTO> productDTOS = products.stream()
                 .map(product -> modelMapper.map(product, ProductDTO.class))
                 .toList();
@@ -162,6 +169,22 @@ public class ProductServiceImpl implements ProductService {
 
         //save
         Product product2 = productRepository.save(product1);
+        // the updates needs to be propagated to the carts product,
+        // like if the updates is price change
+
+        List<Cart> carts = cartRepository.findCartByProductId(productId);
+
+        List<CartDTO> cartDTOS = carts.stream()
+                .map(cart -> {
+                    CartDTO cartDTO = modelMapper.map(cart, CartDTO.class);
+                    List<ProductDTO> products = cart.getCartItems().stream()
+                            .map(p -> modelMapper.map(p.getProduct(), ProductDTO.class))
+                            .toList();
+                    cartDTO.setProducts(products);
+                    return cartDTO;
+                }).toList();
+
+        cartDTOS.forEach(cartDTO -> cartService.updateProductInCart(cartDTO.getCartId(), productId));
         return modelMapper.map(product2, ProductDTO.class);
     }
 
@@ -169,6 +192,12 @@ public class ProductServiceImpl implements ProductService {
     public ProductDTO deleteProduct(Long productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", "productId", productId));
+
+        //delete product from the cart as it is permanently deleted from the product table
+        List<Cart> carts = cartRepository.findCartByProductId(productId);
+        carts.forEach(cart -> cartService.deleteProductFromCart(cart.getCartId(), productId));
+
+        //delete product from product table
         productRepository.delete(product);
         return modelMapper.map(product, ProductDTO.class);
     }
